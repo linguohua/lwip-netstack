@@ -251,6 +251,13 @@ udp_input(struct pbuf *p, struct netif *inp)
    * preferred. If no perfect match is found, the first unconnected pcb that
    * matches the local port and ip address gets the datagram. */
   for (pcb = udp_pcbs; pcb != NULL; pcb = pcb->next) {
+
+#if TUN2SOCKS
+	// go-tun2socks logic
+	// take the first one, library users are responsible for creating that pcb
+	break;
+#endif /* TUN2SOCKS */
+
     /* print the PCB local and remote address */
     LWIP_DEBUGF(UDP_DEBUG, ("pcb ("));
     ip_addr_debug_print_val(UDP_DEBUG, pcb->local_ip);
@@ -400,8 +407,18 @@ udp_input(struct pbuf *p, struct netif *inp)
 #endif /* SO_REUSE && SO_REUSE_RXTOALL */
       /* callback */
       if (pcb->recv != NULL) {
+#if TUN2SOCKS
+        // go-tun2socks logic
+        // Since we are accepting all udp datagrams using the default netif and
+        // and the default pcb, and the address of the default pcb need not to match
+        // the packet's dest address in tun2socks, our application will never 
+        // know what are the original dest address and port if we don't pass them
+        // to the recv callback.
+        pcb->recv(pcb->recv_arg, pcb, p, ip_current_src_addr(), src, ip_current_dest_addr(), dest);
+#else
         /* now the recv function is responsible for freeing p */
         pcb->recv(pcb->recv_arg, pcb, p, ip_current_src_addr(), src);
+#endif /* TUN2SOCKS */
       } else {
         /* no recv function registered? then we have to free the pbuf! */
         pbuf_free(p);
@@ -473,8 +490,13 @@ udp_send(struct udp_pcb *pcb, struct pbuf *p)
     return ERR_VAL;
   }
 
+#if TUN2SOCKS
+  /* tun2socks should never use udp_send(), use udp_sendto() directly instead */
+  return ERR_OK;
+#else
   /* send to the packet using remote ip and port stored in the pcb */
   return udp_sendto(pcb, p, &pcb->remote_ip, pcb->remote_port);
+#endif /* TUN2SOCKS */
 }
 
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
@@ -492,9 +514,14 @@ udp_send_chksum(struct udp_pcb *pcb, struct pbuf *p,
     return ERR_VAL;
   }
 
+#if TUN2SOCKS
+  /* tun2socks should never use udp_send_chksum(), use udp_sendto_chksum() directly instead */
+  return ERR_OK;
+#else
   /* send to the packet using remote ip and port stored in the pcb */
   return udp_sendto_chksum(pcb, p, &pcb->remote_ip, pcb->remote_port,
                            have_chksum, chksum);
+#endif /* TUN2SOCKS */
 }
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
 
@@ -516,11 +543,29 @@ udp_send_chksum(struct udp_pcb *pcb, struct pbuf *p,
  *
  * @see udp_disconnect() udp_send()
  */
+#if TUN2SOCKS
+err_t
+udp_sendto(struct udp_pcb *pcb, struct pbuf *p,
+  const ip_addr_t *dst_ip, u16_t dst_port, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
 err_t
 udp_sendto(struct udp_pcb *pcb, struct pbuf *p,
            const ip_addr_t *dst_ip, u16_t dst_port)
 {
+#endif /* TUN2SOCKS */
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
+#if TUN2SOCKS
+  return udp_sendto_chksum(pcb, p, dst_ip, dst_port, 0, 0, src_ip, src_port);
+}
+
+/** @ingroup udp_raw
+ * Same as udp_sendto(), but with checksum */
+err_t
+udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
+                  u16_t dst_port, u8_t have_chksum, u16_t chksum, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
   return udp_sendto_chksum(pcb, p, dst_ip, dst_port, 0, 0);
 }
 
@@ -530,6 +575,7 @@ err_t
 udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
                   u16_t dst_port, u8_t have_chksum, u16_t chksum)
 {
+#endif /* TUN2SOCKS */
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
   struct netif *netif;
 
@@ -594,9 +640,17 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
     return ERR_RTE;
   }
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
+#if TUN2SOCKS
+  return udp_sendto_if_chksum(pcb, p, dst_ip, dst_port, netif, have_chksum, chksum, src_ip, src_port);
+#else
   return udp_sendto_if_chksum(pcb, p, dst_ip, dst_port, netif, have_chksum, chksum);
+#endif /* TUN2SOCKS */
 #else /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
+#if TUN2SOCKS
+  return udp_sendto_if(pcb, p, dst_ip, dst_port, netif, src_ip, src_port);
+#else
   return udp_sendto_if(pcb, p, dst_ip, dst_port, netif);
+#endif /* TUN2SOCKS */
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
 }
 
@@ -620,11 +674,29 @@ udp_sendto_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
  *
  * @see udp_disconnect() udp_send()
  */
+#if TUN2SOCKS
+err_t
+udp_sendto_if(struct udp_pcb *pcb, struct pbuf *p,
+  const ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
 err_t
 udp_sendto_if(struct udp_pcb *pcb, struct pbuf *p,
               const ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif)
 {
+#endif /* TUN2SOCKS */
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
+#if TUN2SOCKS
+  return udp_sendto_if_chksum(pcb, p, dst_ip, dst_port, netif, 0, 0, src_ip, src_port);
+}
+
+/** Same as udp_sendto_if(), but with checksum */
+err_t
+udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
+                     u16_t dst_port, struct netif *netif, u8_t have_chksum,
+                     u16_t chksum, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
   return udp_sendto_if_chksum(pcb, p, dst_ip, dst_port, netif, 0, 0);
 }
 
@@ -634,8 +706,12 @@ udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_i
                      u16_t dst_port, struct netif *netif, u8_t have_chksum,
                      u16_t chksum)
 {
+#endif /* TUN2SOCKS */
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
+#if TUN2SOCKS
+#else
   const ip_addr_t *src_ip;
+#endif /* TUN2SOCKS */
 
   LWIP_ERROR("udp_sendto_if: invalid pcb", pcb != NULL, return ERR_ARG);
   LWIP_ERROR("udp_sendto_if: invalid pbuf", p != NULL, return ERR_ARG);
@@ -646,6 +722,8 @@ udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_i
     return ERR_VAL;
   }
 
+#if TUN2SOCKS
+#else
   /* PCB local address is IP_ANY_ADDR or multicast? */
 #if LWIP_IPV6
   if (IP_IS_V6(dst_ip)) {
@@ -686,20 +764,47 @@ udp_sendto_if_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_i
       src_ip = &pcb->local_ip;
     }
 #endif /* LWIP_IPV4 */
+#endif /* TUN2SOCKS */
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
+#if TUN2SOCKS
+  return udp_sendto_if_src_chksum(pcb, p, dst_ip, dst_port, netif, have_chksum, chksum, src_ip, src_port);
+#else
   return udp_sendto_if_src_chksum(pcb, p, dst_ip, dst_port, netif, have_chksum, chksum, src_ip);
+#endif /* TUN2SOCKS */
 #else /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
+#if TUN2SOCKS
+  return udp_sendto_if_src(pcb, p, dst_ip, dst_port, netif, src_ip, src_port);
+#else
   return udp_sendto_if_src(pcb, p, dst_ip, dst_port, netif, src_ip);
+#endif /* TUN2SOCKS */
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
 }
 
 /** @ingroup udp_raw
  * Same as @ref udp_sendto_if, but with source address */
+#if TUN2SOCKS
+err_t
+udp_sendto_if_src(struct udp_pcb *pcb, struct pbuf *p,
+  const ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
 err_t
 udp_sendto_if_src(struct udp_pcb *pcb, struct pbuf *p,
                   const ip_addr_t *dst_ip, u16_t dst_port, struct netif *netif, const ip_addr_t *src_ip)
 {
+#endif /* TUN2SOCKS */
 #if LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP
+#if TUN2SOCKS
+  return udp_sendto_if_src_chksum(pcb, p, dst_ip, dst_port, netif, 0, 0, src_ip, src_port);
+}
+
+/** Same as udp_sendto_if_src(), but with checksum */
+err_t
+udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *dst_ip,
+                     u16_t dst_port, struct netif *netif, u8_t have_chksum,
+                     u16_t chksum, const ip_addr_t *src_ip, u16_t src_port)
+{
+#else
   return udp_sendto_if_src_chksum(pcb, p, dst_ip, dst_port, netif, 0, 0, src_ip);
 }
 
@@ -709,6 +814,7 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
                          u16_t dst_port, struct netif *netif, u8_t have_chksum,
                          u16_t chksum, const ip_addr_t *src_ip)
 {
+#endif /* TUN2SOCKS */
 #endif /* LWIP_CHECKSUM_ON_COPY && CHECKSUM_GEN_UDP */
   struct udp_hdr *udphdr;
   err_t err;
@@ -782,7 +888,11 @@ udp_sendto_if_src_chksum(struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *d
               (q->len >= sizeof(struct udp_hdr)));
   /* q now represents the packet to be sent */
   udphdr = (struct udp_hdr *)q->payload;
+#if TUN2SOCKS
+  udphdr->src = lwip_htons(src_port);
+#else
   udphdr->src = lwip_htons(pcb->local_port);
+#endif /* TUN2SOCKS */
   udphdr->dest = lwip_htons(dst_port);
   /* in UDP, 0 checksum means 'no checksum' */
   udphdr->chksum = 0x0000;
