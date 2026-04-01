@@ -53,11 +53,11 @@ fn compile_lwip() {
         .file("src/lwip/src/core/tcp_out.c")
         .file("src/lwip/src/core/timeouts.c")
         .file("src/lwip/src/core/udp.c")
-        //.file("src/lwip/core/ipv4/icmp.c")
+        .file("src/lwip/src/core/ipv4/icmp.c")
         .file("src/lwip/src/core/ipv4/ip4_frag.c")
         .file("src/lwip/src/core/ipv4/ip4.c")
         .file("src/lwip/src/core/ipv4/ip4_addr.c")
-        //.file("src/lwip/core/ipv6/icmp6.c")
+        .file("src/lwip/src/core/ipv6/icmp6.c")
         .file("src/lwip/src/core/ipv6/ip6.c")
         .file("src/lwip/src/core/ipv6/ip6_addr.c")
         .file("src/lwip/src/core/ipv6/ip6_frag.c")
@@ -70,7 +70,15 @@ fn compile_lwip() {
     if let Some(sdk_include_path) = sdk_include_path() {
         build.include(sdk_include_path);
     }
-    build.debug(true);
+
+    let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+
+    if profile == "release" {
+        build.debug(false);
+    } else {
+        build.debug(true);
+    }
+
     build.compile("liblwip.a");
 }
 
