@@ -70,30 +70,29 @@
 #define LWIP_IPV6 1
 #define LWIP_IPV6_MLD 0
 #define LWIP_IPV6_AUTOCONFIG 1
+#define LWIP_TCP_KEEPALIVE 1 // lingh
 
 #if defined __APPLE__
 #include <TargetConditionals.h>
-
-#if TARGET_OS_IPHONE
-#define LWIP_TCP_KEEPALIVE 1
-#define MEMP_NUM_TCP_PCB 1024
-#else
-#define MEMP_NUM_TCP_PCB 2048
-#endif
+    #if TARGET_OS_IPHONE
+        #define MEMP_NUM_TCP_PCB 1024
+    #else
+        #define MEMP_NUM_TCP_PCB 2048
+    #endif
 #elif defined __linux__
-#include <endian.h>
+    #include <endian.h>
 
-// BYTE_ORDER by default is LITTLE_ENDIAN if undefined,
-// detects only big endian here.
-#if defined __BYTE_ORDER && defined __BIG_ENDIAN
-#if _BYTE_ORDER == __BIG_ENDIAN
-#define BYTE_ORDER BIG_ENDIAN
-#endif
-#endif
+    // BYTE_ORDER by default is LITTLE_ENDIAN if undefined,
+    // detects only big endian here.
+    #if defined __BYTE_ORDER && defined __BIG_ENDIAN
+        #if _BYTE_ORDER == __BIG_ENDIAN
+            #define BYTE_ORDER BIG_ENDIAN
+        #endif
+    #endif
 
-#define MEMP_NUM_TCP_PCB 2048
+    #define MEMP_NUM_TCP_PCB 2048
 #else
-#define MEMP_NUM_TCP_PCB 2048
+    #define MEMP_NUM_TCP_PCB 2048
 #endif
 
 // disable checksum checks
@@ -107,16 +106,18 @@
 #define LWIP_CHKSUM_ALGORITHM 3
 
 #define TCP_MSS 1460
-#define TCP_WND (128 * TCP_MSS)
-#define TCP_SND_BUF (128 * TCP_MSS)
+#define TCP_WND (32 * TCP_MSS)
+#define TCP_SND_BUF (64 * TCP_MSS)
 
-#if TARGET_OS_IPHONE
-#define MEM_SIZE (2 * 1024 * 1024)
+#if defined __APPLE__
+#include <TargetConditionals.h>
+    #if TARGET_OS_IPHONE
+        #define MEM_SIZE (2 * 1024 * 1024)
+    #else
+        #define MEM_SIZE (16 * 1024 * 1024)
+    #endif
 #else
-#define MEM_SIZE (16 * 1024 * 1024)
-#endif
-#else
-#define MEM_SIZE (16 * 1024 * 1024)
+    #define MEM_SIZE (16 * 1024 * 1024)
 #endif
 
 #define MEMP_NUM_TCP_SEG 4096
